@@ -10,6 +10,15 @@ SHEET_NAME = "Prog_zvit"
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 def get_client():
+    # --- НОВЫЙ БЛОК ДЛЯ RENDER ---
+    if not os.path.exists(JSON_FILE) and "GCP_SERVICE_ACCOUNT_KEY" in os.environ:
+        try:
+            with open(JSON_FILE, "w") as f:
+                f.write(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
+        except Exception as e:
+            print(f"Ошибка создания файла ключа: {e}")
+    # ----------------------------
+
     if not os.path.exists(JSON_FILE):
         return None
     try:
@@ -18,7 +27,7 @@ def get_client():
     except:
         return None
 
-def main(page: ft.Page):
+def main(page: ft.Page):    
     page.title = "MOM: Улік завдань"
     page.scroll = ft.ScrollMode.AUTO
     page.theme_mode = ft.ThemeMode.LIGHT
