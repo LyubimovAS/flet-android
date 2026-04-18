@@ -1,1 +1,4 @@
 credentials.json
+venv/
+.flet/
+__pycache__/
