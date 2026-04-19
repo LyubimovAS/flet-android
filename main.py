@@ -10,168 +10,147 @@ SHEET_NAME = "Prog_zvit"
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 def get_client():
-    # --- НОВЫЙ БЛОК ДЛЯ RENDER ---
     if not os.path.exists(JSON_FILE) and "GCP_SERVICE_ACCOUNT_KEY" in os.environ:
         try:
             with open(JSON_FILE, "w") as f:
                 f.write(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
-        except Exception as e:
-            print(f"Ошибка создания файла ключа: {e}")
-    # ----------------------------
-
-    if not os.path.exists(JSON_FILE):
-        return None
+        except: pass
+    if not os.path.exists(JSON_FILE): return None
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_FILE, SCOPE)
         return gspread.authorize(creds)
-    except:
-        return None
+    except: return None
 
 def main(page: ft.Page):
-    # --- НАСТРОЙКИ ОКНА ---
-    page.window_width = 400       # Ширина окна
-    page.window_height = 800      # Высота окна
-    page.window_resizable = True  # Можно ли менять размер вручную
-    
-    # Центрируем контент, если это веб-версия
-    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    
-    # Твои старые настройки
     page.title = "MOM: Улік завдань"
-    page.scroll = ft.ScrollMode.AUTO
     page.theme_mode = ft.ThemeMode.LIGHT
-    
-    # Подключение
+    page.window_width = 450
+    page.window_height = 800
+    page.padding = 20
+    page.scroll = ft.ScrollMode.AUTO
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+
     client = get_client()
     spreadsheet = None
     if client:
-        try:
-            spreadsheet = client.open(SHEET_NAME)
-        except:
-            pass
+        try: spreadsheet = client.open(SHEET_NAME)
+        except: pass
 
     state = {"worksheet": None, "data": []}
-    
+
     def save_changes(row_idx, status, money, materials, closed_1c):
         row_num = row_idx + 2
         try:
             state["worksheet"].update_cell(row_num, 4, status)
-            state["worksheet"].update_cell(row_num, 5, money)
+            state["worksheet"].update_cell(row_num, 5, str(money).replace('.', ','))
             state["worksheet"].update_cell(row_num, 6, materials)
             state["worksheet"].update_cell(row_num, 7, "так" if closed_1c else "ні")
-            
-            page.snack_bar = ft.SnackBar(ft.Text("Збережено!"))
-            page.snack_bar.open = True
             show_stores(state["worksheet"].title)
-        except Exception as e:
-            print(f"Помилка збереження: {e}")
+        except: pass
 
+    # --- ЭКРАН РЕДАКТИРОВАНИЯ ЗАДАНИЯ ---
     def show_task_edit(task_idx, task, sheet_title):
         page.clean()
-        
-        status_dd = ft.Dropdown(
-            label="Статус виконання",
-            value=str(task.get('Статус виконання', 'в процесі')),
-            options=[
-                ft.dropdown.Option("виконано"), 
-                ft.dropdown.Option("в процесі"),                
-                ft.dropdown.Option("не виконано")
-            ]
-        )
-        money_tf = ft.TextField(label="Витрати", value=str(task.get('Витрати', '0')))
-        mat_tf = ft.TextField(label="Матеріали", value=str(task.get('Матеріали', '')), multiline=True)
-        one_c_sw = ft.Switch(label="Закриття в 1С", value=(str(task.get('Закриття в 1С')) == "так"))
-
         page.add(
             ft.Text(f"Магазин №{task.get('№')}", size=20, weight="bold"),
-            ft.Text(f"Завдання: {task.get('Опис робіт', '-')}", size=16),
-            status_dd, money_tf, mat_tf, one_c_sw,
-            ft.ElevatedButton("Зберегти", on_click=lambda _: save_changes(
-                task_idx, status_dd.value, money_tf.value, mat_tf.value, one_c_sw.value
-            )),
-            ft.TextButton("Назад", on_click=lambda _: show_stores(sheet_title))
+            ft.Divider(),
+            status_dd := ft.Dropdown(label="Статус", value=str(task.get('Статус виконання', 'в процесі')),
+                options=[ft.dropdown.Option("виконано"), ft.dropdown.Option("в процесі"), ft.dropdown.Option("не виконано")]),
+            money_tf := ft.TextField(label="Витрати", value=str(task.get('Витрати', '0'))),
+            mat_tf := ft.TextField(label="Матеріали", value=str(task.get('Матеріали', '')), multiline=True),
+            one_c_sw := ft.Switch(label="Закриття в 1С", value=(str(task.get('Закриття в 1С')) == "так")),
+            ft.ElevatedButton("Зберегти зміни", 
+                              on_click=lambda _: save_changes(task_idx, status_dd.value, money_tf.value, mat_tf.value, one_c_sw.value),
+                              width=300, height=50, bgcolor="blue50"),
+            ft.OutlinedButton("Повернутися до завдань", 
+                              on_click=lambda _: show_stores(sheet_title), 
+                              width=300, height=50)
         )
         page.update()
 
+    # --- ЭКРАН СПИСКА МАГАЗИНОВ И ЗАДАНИЙ ---
     def show_stores(sheet_title):
         page.clean()
-        page.add(ft.ProgressBar(), ft.Text("Завантаження..."))
-        page.update()
-
         try:
             state["worksheet"] = spreadsheet.worksheet(sheet_title)
             state["data"] = state["worksheet"].get_all_records()
             stores = sorted(list(set(str(d['№']) for d in state["data"] if d.get('№'))))
             
-            page.clean()
-            page.add(ft.Text(f"Лист: {sheet_title}", size=22, weight="bold"))
+            page.add(
+                ft.Text(sheet_title, size=22, weight="bold"),
+                ft.ElevatedButton("Повернутися до вибору дати", 
+                                  on_click=lambda _: show_sheets_list(), 
+                                  width=300, height=45),
+                ft.Divider()
+            )
             
             for s_id in stores:
-                store_tasks = [(i, d) for i, d in enumerate(state["data"]) if str(d['№']) == s_id]
                 page.add(ft.Container(content=ft.Text(f"Магазин №{s_id}", weight="bold"), bgcolor="blue100", padding=10, border_radius=5))
-                
-                for i, t in store_tasks:
-                    # Логика определения цвета и текста статуса
-                    raw_status = str(t.get('Статус виконання', '')).strip().lower()
-                    
-                    if raw_status == "виконано":
-                        card_color = "green100"  # Можно писать просто строкой
-                        display_status = "виконано"
-                    elif raw_status == "в процесі":
-                        card_color = "yellow100"
-                        display_status = "в процесі"
-                    else: 
-                        card_color = "red100"
-                        display_status = "не виконано"
-
-                    # Добавляем задачу в контейнере
-                    page.add(
-                        ft.Container(
-                            content=ft.ListTile(
-                                title=ft.Text(str(t.get('Опис робіт', 'Без опису'))),
-                                subtitle=ft.Text(f"Статус: {display_status}"),
-                                on_click=lambda e, idx=i, item=t: show_task_edit(idx, item, sheet_title)
-                            ),
-                            bgcolor=card_color,
-                            border_radius=10,
-                            padding=5,
-                            margin=ft.margin.only(bottom=5)
-                        )
-                    )
-        except Exception as e:
-            page.add(ft.Text(f"Помилка: {e}"))
-
-        page.add(ft.Divider(), ft.ElevatedButton("До списку дат", on_click=lambda _: show_sheets_list()))
+                for i, t in [(i, d) for i, d in enumerate(state["data"]) if str(d['№']) == s_id]:
+                    raw_s = str(t.get('Статус виконання', '')).strip().lower()
+                    clr = "green100" if raw_s == "виконано" else "yellow100" if raw_s == "в процесі" else "red100"
+                    page.add(ft.Container(
+                        content=ft.ListTile(title=ft.Text(str(t.get('Опис робіт', 'Без опису')), size=14),
+                            subtitle=ft.Text(f"Статус: {raw_s}"),
+                            on_click=lambda e, idx=i, item=t: show_task_edit(idx, item, sheet_title)),
+                        bgcolor=clr, border_radius=10, margin=ft.margin.only(bottom=5)))
+        except: page.add(ft.Text("Помилка завантаження"))
         page.update()
 
+    # --- ГЛАВНЫЙ ЭКРАН (ВЫБОР ДАТЫ) ---
     def show_sheets_list():
         page.clean()
-        page.add(ft.Text("Оберіть дату звіту", size=24, weight="bold"))
-
+        page.add(ft.Text("Звіти та Кошторис", size=24, weight="bold", text_align="center"), ft.Divider(height=20))
         if not spreadsheet:
-            page.add(ft.Text("Помилка підключення!", color="red"))
-            page.update()
-            return
+            page.add(ft.Text("Помилка підключення!", color="red")); page.update(); return
 
         try:
             all_sheets = spreadsheet.worksheets()
             all_sheets.reverse()
-
             for ws in all_sheets:
-                # Простая кнопка-прямоугольник для каждой даты
+                data = ws.get_all_records()
+                
+                # Считаем витрати
+                total_spent = 0
+                for row in data:
+                    try:
+                        v = str(row.get('Витрати', '0')).replace(',', '.')
+                        total_spent += float(v) if v else 0
+                    except: pass
+                
+                # Читаем бюджет из H2
+                try:
+                    budget_val = ws.cell(2, 8).value
+                    budget = float(str(budget_val).replace(',', '.')) if budget_val else 0
+                except: budget = 0
+
+                # Считаем залишок и пишем в I2
+                remainder = budget - total_spent
+                try:
+                    ws.update_cell(2, 9, str(remainder).replace('.', ','))
+                except: pass
+                
+                rem_color = "green" if remainder >= 0 else "red"
+
                 page.add(
                     ft.Container(
-                        content=ft.Text(ws.title, size=18, text_align="center"),
+                        width=380,
                         padding=15,
                         bgcolor="white",
                         border=ft.border.all(1, "blue200"),
-                        border_radius=10,
+                        border_radius=12,
                         on_click=lambda e, t=ws.title: show_stores(t),
-                        width=400 # На всю ширину окна
+                        content=ft.Column([
+                            ft.Text(ws.title, size=18, weight="bold"),
+                            ft.Row([
+                                ft.Text(f"Витрати: {total_spent:.2f}", size=14, color="grey700"),
+                                ft.Text(f"Залишок: {remainder:.2f}", size=14, weight="bold", color=rem_color)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                        ])
                     )
                 )
-        except:
-            page.add(ft.Text("Не вдалося завантажити список дат"))
+        except Exception as e:
+            page.add(ft.Text(f"Помилка: {e}"))
         page.update()
 
     show_sheets_list()
