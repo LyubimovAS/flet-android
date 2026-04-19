@@ -27,7 +27,16 @@ def get_client():
     except:
         return None
 
-def main(page: ft.Page):    
+def main(page: ft.Page):
+    # --- НАСТРОЙКИ ОКНА ---
+    page.window_width = 400       # Ширина окна
+    page.window_height = 800      # Высота окна
+    page.window_resizable = True  # Можно ли менять размер вручную
+    
+    # Центрируем контент, если это веб-версия
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    
+    # Твои старые настройки
     page.title = "MOM: Улік завдань"
     page.scroll = ft.ScrollMode.AUTO
     page.theme_mode = ft.ThemeMode.LIGHT
@@ -42,7 +51,7 @@ def main(page: ft.Page):
             pass
 
     state = {"worksheet": None, "data": []}
-
+    
     def save_changes(row_idx, status, money, materials, closed_1c):
         row_num = row_idx + 2
         try:
@@ -65,8 +74,8 @@ def main(page: ft.Page):
             value=str(task.get('Статус виконання', 'в процесі')),
             options=[
                 ft.dropdown.Option("виконано"), 
-                ft.dropdown.Option("в процесі"), 
-                ft.dropdown.Option("не фарбуємо")
+                ft.dropdown.Option("в процесі"),                
+                ft.dropdown.Option("не виконано")
             ]
         )
         money_tf = ft.TextField(label="Витрати", value=str(task.get('Витрати', '0')))
@@ -100,12 +109,35 @@ def main(page: ft.Page):
             for s_id in stores:
                 store_tasks = [(i, d) for i, d in enumerate(state["data"]) if str(d['№']) == s_id]
                 page.add(ft.Container(content=ft.Text(f"Магазин №{s_id}", weight="bold"), bgcolor="blue100", padding=10, border_radius=5))
+                
                 for i, t in store_tasks:
-                    page.add(ft.ListTile(
-                        title=ft.Text(str(t.get('Опис робіт', 'Без опису'))),
-                        subtitle=ft.Text(f"Статус: {t.get('Статус виконання', '-')}"),
-                        on_click=lambda e, idx=i, item=t: show_task_edit(idx, item, sheet_title)
-                    ))
+                    # Логика определения цвета и текста статуса
+                    raw_status = str(t.get('Статус виконання', '')).strip().lower()
+                    
+                    if raw_status == "виконано":
+                        card_color = "green100"  # Можно писать просто строкой
+                        display_status = "виконано"
+                    elif raw_status == "в процесі":
+                        card_color = "yellow100"
+                        display_status = "в процесі"
+                    else: 
+                        card_color = "red100"
+                        display_status = "не виконано"
+
+                    # Добавляем задачу в контейнере
+                    page.add(
+                        ft.Container(
+                            content=ft.ListTile(
+                                title=ft.Text(str(t.get('Опис робіт', 'Без опису'))),
+                                subtitle=ft.Text(f"Статус: {display_status}"),
+                                on_click=lambda e, idx=i, item=t: show_task_edit(idx, item, sheet_title)
+                            ),
+                            bgcolor=card_color,
+                            border_radius=10,
+                            padding=5,
+                            margin=ft.margin.only(bottom=5)
+                        )
+                    )
         except Exception as e:
             page.add(ft.Text(f"Помилка: {e}"))
 
@@ -114,21 +146,32 @@ def main(page: ft.Page):
 
     def show_sheets_list():
         page.clean()
+        page.add(ft.Text("Оберіть дату звіту", size=24, weight="bold"))
+
         if not spreadsheet:
-            page.add(ft.Text("Не вдалося підключитися. Додайте пошту з JSON в доступ таблиці!", color="red", size=16))
+            page.add(ft.Text("Помилка підключення!", color="red"))
             page.update()
             return
 
         try:
             all_sheets = spreadsheet.worksheets()
-            page.add(ft.Text("Оберіть дату:", size=24, weight="bold"))
+            all_sheets.reverse()
+
             for ws in all_sheets:
-                page.add(ft.ListTile(
-                    title=ft.Text(ws.title),
-                    on_click=lambda e, title=ws.title: show_stores(title)
-                ))
-        except Exception as e:
-            page.add(ft.Text(f"Помилка списку: {e}"))
+                # Простая кнопка-прямоугольник для каждой даты
+                page.add(
+                    ft.Container(
+                        content=ft.Text(ws.title, size=18, text_align="center"),
+                        padding=15,
+                        bgcolor="white",
+                        border=ft.border.all(1, "blue200"),
+                        border_radius=10,
+                        on_click=lambda e, t=ws.title: show_stores(t),
+                        width=400 # На всю ширину окна
+                    )
+                )
+        except:
+            page.add(ft.Text("Не вдалося завантажити список дат"))
         page.update()
 
     show_sheets_list()
